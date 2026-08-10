@@ -16,11 +16,30 @@
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
 
-# JS and CSS are versioned with ?v= query strings, so they can be cached hard.
-# HTML must not be, or a deploy would not reach anyone.
+# Caching.
+#
+# JavaScript must revalidate. Only the entry script carries a ?v=; everything
+# it imports is a bare specifier like './core/grid.js', so those URLs never
+# change. Under a long immutable policy a deploy shipped a NEW entry script
+# against CACHED old modules — a mixed build, which fails in stranger ways
+# than a wholly stale one. Long caching is only safe with fingerprinted
+# filenames, and a no-build-step project does not have them.
+#
+# Images are different: their filenames are stable and their contents never
+# change in place, so they keep the long cache and stay free after first load.
 <IfModule mod_expires.c>
   ExpiresActive On
-  ExpiresByType text/css "access plus 1 year"
-  ExpiresByType application/javascript "access plus 1 year"
+  ExpiresByType image/png "access plus 1 year"
+  ExpiresByType image/jpeg "access plus 1 year"
+  ExpiresByType image/webp "access plus 1 year"
   ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
 </IfModule>
