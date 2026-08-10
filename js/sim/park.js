@@ -27,11 +27,17 @@ export class Park {
 
     this.stats = {
       revenue: 0,
+      spend: 0,
       admitted: 0,
       departed: 0,
       happinessSum: 0,
       happinessSamples: 0,
     };
+
+    // One closed record per finished day. Kept in memory only and capped, so
+    // a park left running overnight cannot grow an unbounded ledger.
+    this.finance = [];
+    this.today = { revenue: 0, spend: 0, admitted: 0 };
 
     this.accessTiles = new Map(); // tile index -> building ids reachable from it
     this.buildEntrance();
@@ -89,7 +95,7 @@ export class Park {
     if (!this.grid.reshape(gx, gy, delta)) {
       return { ok: false, reason: delta > 0 ? 'Already at maximum height' : 'Already at ground level' };
     }
-    this.money -= cost;
+    this.spend(cost);
     // Elevation changes what guests can reach, so the access map has to be
     // rebuilt even though no building moved.
     this.rebuildAccess();
@@ -110,7 +116,7 @@ export class Park {
         return { ok: false, reason: 'Something is already there' };
       }
       this.grid.set(gx, gy, TILE.PATH, -1);
-      this.money -= spec.cost;
+      this.spend(spec.cost);
       this.rebuildAccess();
       return { ok: true };
     }
@@ -139,7 +145,7 @@ export class Park {
     };
     this.buildings.push(building);
     this.grid.fill(gx, gy, w, h, TILE.BUILDING, id);
-    this.money -= spec.cost;
+    this.spend(spec.cost);
     this.rebuildAccess();
     return { ok: true, building };
   }
@@ -162,7 +168,9 @@ export class Park {
       // Half the build cost back, and anyone queuing is turned loose rather
       // than left holding a reference to a building that no longer exists.
       const refund = Math.floor(building.spec.cost / 2);
-      this.money += refund;
+      // Negative spending: a refund reduces the day's outgoings rather than
+      // counting as trading income, or demolishing would look like revenue.
+      this.spend(-refund);
       building.active = false;
       for (const guest of this.guests) {
         if (guest.targetBuilding === id) {
@@ -253,6 +261,7 @@ export class Park {
     this.minutes += dt * MINUTES_PER_SECOND;
     if (this.minutes >= 24 * 60) {
       this.minutes -= 24 * 60;
+      this.closeDay();
       this.day++;
     }
 
@@ -313,11 +322,81 @@ export class Park {
       const guest = new Guest(this.entrance.gx, this.entrance.gy);
       if (guest.cash < this.entranceFee) continue; // priced out, turns around
       guest.cash -= this.entranceFee;
-      this.money += this.entranceFee;
-      this.stats.revenue += this.entranceFee;
+      this.earn(this.entranceFee);
       this.stats.admitted++;
+      this.today.admitted++;
       this.guests.push(guest);
     }
+  }
+
+  // Close the books on a finished day.
+  closeDay() {
+    this.finance.push({
+      day: this.day,
+      revenue: this.today.revenue,
+      spend: this.today.spend,
+      profit: this.today.revenue - this.today.spend,
+      admitted: this.today.admitted,
+    });
+    if (this.finance.length > 60) this.finance.shift();
+    this.today = { revenue: 0, spend: 0, admitted: 0 };
+  }
+
+  // Money in and out, in one place, so the daily ledger cannot drift from the
+  // balance. Every path that moves money goes through these two.
+  earn(amount) {
+    this.money += amount;
+    this.stats.revenue += amount;
+    this.today.revenue += amount;
+  }
+
+  spend(amount) {
+    this.money -= amount;
+    this.stats.spend += amount;
+    this.today.spend += amount;
+  }
+
+  // --- selection --------------------------------------------------------
+
+  buildingAt(gx, gy) {
+    const id = this.grid.ownerAt(gx, gy);
+    const building = this.buildings[id];
+    return building && building.active ? building : null;
+  }
+
+  // Nearest guest to a grid position, within a tile. Guests are drawn as small
+  // figures, so hit-testing their exact sprite would be unusable; a radius
+  // around the cell is what a player actually means by clicking one.
+  guestNear(gx, gy, radius = 0.9) {
+    let best = null;
+    let bestDist = radius * radius;
+    for (const guest of this.guests) {
+      const dx = guest.rx + 0.5 - gx;
+      const dy = guest.ry + 0.5 - gy;
+      const dist = dx * dx + dy * dy;
+      if (dist < bestDist) { bestDist = dist; best = guest; }
+    }
+    return best;
+  }
+
+  // Per-hour figures, which is the only way two rides of different lengths
+  // can be compared. Elapsed time comes from the park clock rather than
+  // wall-clock, so pausing does not make everything look unprofitable.
+  buildingStats(building) {
+    const elapsedMinutes = (this.day - 1) * 24 * 60 + this.minutes - 9 * 60;
+    const hours = Math.max(0.05, elapsedMinutes / 60);
+    return {
+      served: building.totalCustomers,
+      revenue: building.revenue,
+      perHour: building.revenue / hours,
+      ridersPerHour: building.totalCustomers / hours,
+      queue: building.queue.length,
+      // What the ride could serve if it never waited for riders.
+      capacityPerHour: (building.spec.capacity * 3600) /
+        (building.spec.rideSeconds + building.spec.loadSeconds),
+      paidBack: building.revenue >= building.spec.cost,
+      cost: building.spec.cost,
+    };
   }
 
   recordDeparture(guest) {

@@ -1,6 +1,6 @@
 // Camera: pan and zoom over the isometric scene.
 
-import { screenToGrid, gridToScreen } from './iso.js';
+import { screenToGrid, screenToGridExact, gridToScreen } from './iso.js';
 
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 2.5;
@@ -52,6 +52,15 @@ export class Camera {
   screenToGrid(sx, sy) {
     const world = this.screenToWorld(sx, sy);
     return screenToGrid(world.x, world.y);
+  }
+
+  // Fractional cell under a pointer event. Hit-testing a guest needs the
+  // fraction: flooring first would snap every position to a cell corner and
+  // make "nearest guest" meaningless within a tile.
+  screenToWorldGrid(event, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const world = this.screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+    return screenToGridExact(world.x, world.y);
   }
 
   // Apply to a 2D context so world coordinates can be drawn directly.

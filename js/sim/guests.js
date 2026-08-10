@@ -7,6 +7,10 @@
 
 import { NEED } from '../data/catalog.js';
 import { findPath, randomStep } from './pathfinding.js';
+import {
+  thoughtQueueTooLong, thoughtTooExpensive, thoughtNothingFor,
+  thoughtEnjoyed, thoughtAte, thoughtBroke, thoughtMiserable,
+} from './thoughts.js';
 
 export const STATE = {
   WALKING: 'walking',
@@ -180,6 +184,8 @@ function stepWalking(park, guest, dt) {
 function decideNextGoal(park, guest) {
   // Out of money or thoroughly miserable: go home.
   if (guest.cash < 3 || guest.happiness < 0.18) {
+    if (guest.cash < 3) thoughtBroke(guest);
+    else thoughtMiserable(guest);
     startLeaving(park, guest);
     return;
   }
@@ -200,6 +206,7 @@ function decideNextGoal(park, guest) {
     // Nothing available for the need they care most about. That is a real
     // failure of the park, and it should cost the player.
     guest.happiness = Math.max(0, guest.happiness - 0.04);
+    thoughtNothingFor(guest, need);
   }
 
   const step = randomStep(park.grid, { gx: guest.gx, gy: guest.gy });
@@ -222,6 +229,7 @@ function stepQueuing(park, guest, dt) {
 
   // A guest who has waited too long gives up and thinks less of the park.
   if (guest.queueTime > PATIENCE_SECONDS) {
+    thoughtQueueTooLong(guest, building.spec.name);
     leaveQueue(park, guest);
     guest.happiness = Math.max(0, guest.happiness - 0.12);
     decideNextGoal(park, guest);
@@ -238,6 +246,7 @@ function stepQueuing(park, guest, dt) {
   if (building.queue.indexOf(guest.id) >= spec.capacity) return;
 
   if (guest.cash < spec.price) {
+    thoughtTooExpensive(guest, spec.name, spec.price);
     leaveQueue(park, guest);
     decideNextGoal(park, guest);
     return;
@@ -246,8 +255,7 @@ function stepQueuing(park, guest, dt) {
   // Pay and board.
   guest.cash -= spec.price;
   guest.spent += spec.price;
-  park.money += spec.price;
-  park.stats.revenue += spec.price;
+  park.earn(spec.price);
   building.totalCustomers++;
   building.revenue += spec.price;
 
@@ -281,8 +289,10 @@ function stepConsuming(park, guest, dt) {
     if (spec.kind === 'ride') {
       const enjoyment = spec.excitement / 10 - Math.max(0, spec.intensity - 6) * 0.06;
       guest.happiness = Math.max(0, Math.min(1, guest.happiness + enjoyment * 0.25));
+      thoughtEnjoyed(guest, spec.name, enjoyment);
     } else {
       guest.happiness = Math.min(1, guest.happiness + 0.05);
+      thoughtAte(guest, spec.name);
     }
   }
 

@@ -8,6 +8,7 @@ import { TILE } from './core/grid.js';
 import { TILE_H } from './core/iso.js';
 import { Hud, Toast } from './ui/hud.js';
 import { loadSprites } from './render/sprites.js';
+import { Inspector, FinanceScreen } from './ui/inspector.js';
 import { savePark, loadPark, saveLocal, loadLocal } from './net/save.js';
 
 const SIM_STEP = 1 / 30; // fixed simulation timestep
@@ -22,13 +23,20 @@ const camera = new Camera(canvas);
 const renderer = new Renderer(canvas, camera);
 const hud = new Hud(document.body);
 const toast = new Toast(document.getElementById('toast'));
+const inspector = new Inspector(document.getElementById('inspector'));
+const finance = new FinanceScreen(document.getElementById('finance'));
 
 let park = new Park();
 let tool = null;        // catalog id, 'delete', or null
 let speed = 1;
 let panning = false;
 let panLast = null;
+let panOrigin = null;
+let panEngaged = false;
 let suppressClick = false;
+// How far the pointer must travel before a press counts as a drag rather
+// than a click, in screen pixels.
+const DRAG_THRESHOLD = 5;
 // Cells already altered by the current drag, so one stroke changes each tile
 // once however slowly the cursor crosses it.
 const strokeTouched = new Set();
@@ -79,6 +87,9 @@ function buildToolbar() {
 
 function selectTool(id) {
   tool = tool === id ? null : id;
+  // Building and inspecting are different modes; leaving a stale panel open
+  // while the cursor has become a bulldozer is just confusing.
+  if (tool) inspector.clear();
   for (const button of toolbar.querySelectorAll('.tool')) {
     button.classList.toggle('is-active', button.dataset.tool === tool);
   }
@@ -94,6 +105,13 @@ function cellFromEvent(event) {
 
 canvas.addEventListener('mousemove', (event) => {
   if (panning && panLast) {
+    // A click is not a drag. Panning only engages once the pointer has moved
+    // past a threshold: with no tool held, mousedown starts a pan, so without
+    // this the single pixel of movement in an ordinary click set
+    // suppressClick and swallowed it — making it impossible to click a guest.
+    const drift = Math.hypot(event.clientX - panOrigin.x, event.clientY - panOrigin.y);
+    if (!panEngaged && drift < DRAG_THRESHOLD) return;
+    panEngaged = true;
     camera.pan(event.clientX - panLast.x, event.clientY - panLast.y);
     panLast = { x: event.clientX, y: event.clientY };
     suppressClick = true;
@@ -131,6 +149,8 @@ canvas.addEventListener('mousedown', (event) => {
   if (event.button === 1 || event.button === 2 || (event.button === 0 && !tool)) {
     panning = true;
     panLast = { x: event.clientX, y: event.clientY };
+    panOrigin = { x: event.clientX, y: event.clientY };
+    panEngaged = false;
     suppressClick = false;
     canvas.classList.add('is-panning');
   }
@@ -139,6 +159,7 @@ canvas.addEventListener('mousedown', (event) => {
 window.addEventListener('mouseup', () => {
   panning = false;
   panLast = null;
+  panEngaged = false;
   strokeTouched.clear();
   canvas.classList.remove('is-panning');
 });
@@ -147,10 +168,21 @@ canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
 canvas.addEventListener('click', (event) => {
   if (suppressClick) { suppressClick = false; return; }
-  if (!tool) return;
 
   const cell = cellFromEvent(event);
   if (!park.grid.inBounds(cell.gx, cell.gy)) return;
+
+  // With no build tool held, a click inspects whatever is under it. Guests
+  // win ties: they are smaller and stand on top of things, so a click that
+  // could mean either almost always meant the guest.
+  if (!tool) {
+    const exact = camera.screenToWorldGrid(event, canvas);
+    const guest = park.guestNear(exact.gx, exact.gy);
+    if (guest) return inspector.select('guest', guest);
+    const building = park.buildingAt(cell.gx, cell.gy);
+    if (building) return inspector.select('building', building);
+    return inspector.clear();
+  }
 
   if (tool === 'delete') {
     const result = park.removeAt(cell.gx, cell.gy);
@@ -200,7 +232,13 @@ window.addEventListener('keydown', (event) => {
   }
 
   switch (event.key.toLowerCase()) {
-    case 'escape': selectTool(null); break;
+    case 'escape':
+      // Back out one layer at a time rather than clearing everything at once.
+      if (finance.open) finance.hide();
+      else if (tool) selectTool(null);
+      else inspector.clear();
+      break;
+    case 'f': finance.toggle(park); break;
     case 'x': selectTool('delete'); break;
     case ' ': event.preventDefault(); setSpeed(speed === 0 ? 1 : 0); break;
     case '=': case '+': setSpeed(Math.min(4, (speed || 1) * 2)); break;
@@ -251,6 +289,8 @@ document.getElementById('btn-load').addEventListener('click', async () => {
   }
 });
 
+document.getElementById('btn-finance').addEventListener('click', () => finance.toggle(park));
+
 document.getElementById('btn-new').addEventListener('click', () => {
   park = new Park();
   frameParkEntrance();
@@ -261,6 +301,7 @@ document.getElementById('btn-new').addEventListener('click', () => {
 
 let accumulator = 0;
 let last = performance.now();
+let panelClock = 0;
 
 function frame(now) {
   let delta = (now - last) / 1000;
@@ -279,6 +320,17 @@ function frame(now) {
 
   renderer.draw(park);
   hud.update(park);
+
+  // The panels read live simulation state, but rebuilding their markup every
+  // frame is wasted work nobody can perceive. Four times a second is well
+  // past the point where it reads as live.
+  panelClock += delta;
+  if (panelClock >= 0.25) {
+    panelClock = 0;
+    inspector.refresh(park);
+    if (finance.open) finance.render(park);
+  }
+
   requestAnimationFrame(frame);
 }
 

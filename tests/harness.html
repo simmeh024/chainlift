@@ -23,6 +23,7 @@ import { Park, GRID_SIZE } from '../js/sim/park.js';
 import { findPath } from '../js/sim/pathfinding.js';
 import { STATE } from '../js/sim/guests.js';
 import { CATALOG, NEED } from '../js/data/catalog.js';
+import { currentThought, moodLabel } from '../js/sim/thoughts.js';
 import { gridToScreen, screenToGrid, depthOf } from '../js/core/iso.js';
 
 const out = document.getElementById('out');
@@ -267,6 +268,84 @@ group('Simulation (integration)');
   const builtHappy = park.averageHappiness;
   check('an empty park is less happy than a built one', barrenHappy < builtHappy,
     `barren ${barrenHappy.toFixed(2)} vs built ${builtHappy.toFixed(2)}`);
+}
+
+// --- ledger and inspection ---------------------------------------------
+group('Ledger and inspection');
+{
+  const park = new Park();
+  const opening = park.money;
+  const mid = Math.floor(GRID_SIZE / 2);
+
+  park.place('carousel', mid + 1, GRID_SIZE - 4);
+  park.place('path', mid + 1, GRID_SIZE - 7);
+  park.reshape(mid + 4, GRID_SIZE - 6, 1, 40);
+
+  // The invariant that matters: the balance is exactly what was earned less
+  // what was spent. Every path that moves money goes through earn/spend, so
+  // if one ever bypasses them this breaks.
+  check('balance equals opening + income - spend',
+    Math.abs(park.money - (opening + park.stats.revenue - park.stats.spend)) < 0.001,
+    `${park.money} vs ${opening + park.stats.revenue - park.stats.spend}`);
+
+  const spentSoFar = park.stats.spend;
+  check('building, path and terrain all charge',
+    spentSoFar === CATALOG.carousel.cost + CATALOG.path.cost + 40, String(spentSoFar));
+
+  // A refund reduces outgoings; it must not look like trading income.
+  const revenueBefore = park.stats.revenue;
+  park.removeAt(mid + 1, GRID_SIZE - 4);
+  check('a refund does not count as income', park.stats.revenue === revenueBefore);
+  check('a refund reduces spend', park.stats.spend < spentSoFar);
+  check('balance still reconciles after a refund',
+    Math.abs(park.money - (opening + park.stats.revenue - park.stats.spend)) < 0.001);
+
+  // Closing a day files it and resets the running totals.
+  park.today.revenue = 500;
+  park.today.spend = 120;
+  park.closeDay();
+  check('closing a day files a record', park.finance.length === 1);
+  check('the record carries profit', park.finance[0].profit === 380);
+  check('today resets after closing', park.today.revenue === 0 && park.today.spend === 0);
+
+  // Per-hour figures need a real elapsed time or they divide by zero.
+  const p2 = new Park();
+  p2.place('drinks', mid - 1, GRID_SIZE - 3);
+  const stats = p2.buildingStats(p2.buildings[0]);
+  check('per-hour figures are finite at time zero',
+    Number.isFinite(stats.perHour) && Number.isFinite(stats.ridersPerHour),
+    `${stats.perHour} / ${stats.ridersPerHour}`);
+  check('capacity per hour is derived from the spec',
+    stats.capacityPerHour > 0 && Number.isFinite(stats.capacityPerHour),
+    String(Math.round(stats.capacityPerHour)));
+  check('a new build has not paid for itself', stats.paidBack === false);
+
+  // Guest picking, and thoughts.
+  // 30 ticks per game minute. Ninety game minutes lands at 10:30, inside
+  // opening hours — running 30*60*20 is twenty game HOURS, which closes the
+  // park and empties it, and is correct behaviour that tests nothing here.
+  const p3 = new Park();
+  for (let i = 0; i < 30 * 90; i++) p3.tick(1 / 30);
+  const someone = p3.guests[0];
+  if (someone) {
+    const found = p3.guestNear(someone.rx + 0.5, someone.ry + 0.5);
+    check('a guest can be picked at their own position', found === someone);
+    check('picking far from anyone finds nobody', p3.guestNear(1, 1) === null);
+    const thought = currentThought(someone);
+    check('every guest has something to say',
+      typeof thought.text === 'string' && thought.text.length > 0, thought.text);
+    check('mood reads as words', typeof moodLabel(someone.happiness) === 'string');
+  } else {
+    check('a guest exists to inspect', false, 'no guests spawned');
+  }
+
+  // An empty park starves its guests, and they should say so rather than
+  // silently losing happiness.
+  const barren = new Park();
+  for (let i = 0; i < 30 * 180; i++) barren.tick(1 / 30);
+  const complained = barren.guests.some((g) =>
+    (g.thoughts || []).some((t) => t.tone === 'bad'));
+  check('guests in an empty park complain', complained);
 }
 
 // --- persistence -------------------------------------------------------
