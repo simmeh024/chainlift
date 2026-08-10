@@ -18,7 +18,7 @@
 <script type="module">
 // Imports the REAL modules. Nothing is reimplemented here, so a passing
 // assertion is evidence about the shipped code and not about a copy of it.
-import { Grid, TILE } from '../js/core/grid.js';
+import { Grid, TILE, MAX_HEIGHT } from '../js/core/grid.js';
 import { Park, GRID_SIZE } from '../js/sim/park.js';
 import { findPath } from '../js/sim/pathfinding.js';
 import { STATE } from '../js/sim/guests.js';
@@ -145,6 +145,62 @@ group('Reachability');
   check('a stall with no adjoining path is unreachable', farAccess === 0, `access entries ${farAccess}`);
 }
 
+// --- terrain -----------------------------------------------------------
+group('Terrain');
+{
+  const g = new Grid(10, 10);
+  check('starts flat', g.levelAt(4, 4) === 0);
+
+  g.reshape(4, 4, 1);
+  check('raise lifts one level', g.levelAt(4, 4) === 1);
+  g.reshape(4, 4, -1);
+  check('lower drops one level', g.levelAt(4, 4) === 0);
+  check('cannot go below ground', g.reshape(4, 4, -1) === false && g.levelAt(4, 4) === 0);
+
+  for (let i = 0; i < MAX_HEIGHT + 3; i++) g.reshape(5, 5, 1);
+  check('clamped at maximum height', g.levelAt(5, 5) === MAX_HEIGHT, String(g.levelAt(5, 5)));
+
+  g.fill(7, 7, 1, 1, TILE.BUILDING, 3);
+  check('cannot reshape under a building', g.canReshape(7, 7) === false);
+
+  // A footprint may not straddle a slope.
+  const flat = new Grid(10, 10);
+  check('flat ground accepts a 2x2', flat.canPlace(2, 2, 2, 2) === true);
+  flat.reshape(3, 2, 1);
+  check('a step inside the footprint is refused', flat.canPlace(2, 2, 2, 2) === false);
+
+  // Steps versus cliffs.
+  const steps = new Grid(10, 10);
+  for (let x = 1; x <= 6; x++) steps.set(x, 5, TILE.PATH);
+  steps.setLevel(4, 5, 1);
+  check('a one-level step is walkable', steps.canStep(3, 5, 4, 5) === true);
+  steps.setLevel(4, 5, 3);
+  check('a three-level cliff is not', steps.canStep(3, 5, 4, 5) === false);
+
+  const blocked = findPath(steps, { gx: 1, gy: 5 }, (gx, gy) => gx === 6 && gy === 5);
+  check('pathfinding refuses to scale a cliff', blocked === null);
+  steps.setLevel(4, 5, 1);
+  const climbed = findPath(steps, { gx: 1, gy: 5 }, (gx, gy) => gx === 6 && gy === 5);
+  check('pathfinding will climb a step', climbed !== null && climbed.length === 6,
+    climbed ? `length ${climbed.length}` : 'null');
+
+  // Height must survive a round trip, and a pre-terrain save must still load.
+  const round = Grid.deserialize(JSON.parse(JSON.stringify(steps.serialize())));
+  check('levels survive serialization', round.levelAt(4, 5) === 1);
+  const legacy = steps.serialize();
+  delete legacy.level;
+  const old = Grid.deserialize(JSON.parse(JSON.stringify(legacy)));
+  check('a save with no terrain loads flat', old.levelAt(4, 5) === 0);
+
+  // Elevation must move a tile up the screen and break depth ties.
+  const flatPos = gridToScreen(3, 3, 0);
+  const highPos = gridToScreen(3, 3, 2);
+  check('raising a tile moves it up the screen', highPos.y < flatPos.y,
+    `${flatPos.y} -> ${highPos.y}`);
+  check('height breaks the depth tie', depthOf(3, 3, 1) > depthOf(3, 3, 0));
+  check('depth still orders by distance first', depthOf(4, 4, 0) > depthOf(3, 3, 7));
+}
+
 // --- live simulation ---------------------------------------------------
 group('Simulation (integration)');
 {
@@ -185,9 +241,17 @@ group('Simulation (integration)');
   // 90 simulated seconds a 20-second carousel must beat the one-guest-per-
   // cycle ceiling of ~4 by a wide margin. This is the exact bug the first
   // balance trace exposed: rated capacity was being ignored entirely.
+  // The ceiling is derived from the shipped spec, not hardcoded. An earlier
+  // version asserted "> 12", which silently became a test of demand rather
+  // than of the boarding mechanism as soon as the decay and spawn rates were
+  // retuned — it failed at exactly 12 while the code under test was fine.
   const carousel = park.buildings.find((b) => b.spec === CATALOG.carousel);
+  const elapsedSeconds = (TICKS_PER_GAME_MINUTE * 90) / 30;
+  const cycle = carousel.spec.rideSeconds + carousel.spec.loadSeconds;
+  const onePerCycle = Math.ceil(elapsedSeconds / cycle);
   check('a ride boards whole vehicles, not one guest per cycle',
-    carousel.totalCustomers > 12, `served ${carousel.totalCustomers}`);
+    carousel.totalCustomers > onePerCycle,
+    `served ${carousel.totalCustomers}, one-per-cycle ceiling ${onePerCycle}`);
   check('a vehicle never exceeds its rated capacity',
     park.buildings.every((b) => b.loaded <= b.spec.capacity),
     park.buildings.map((b) => `${b.spec.name}:${b.loaded}/${b.spec.capacity}`).join(' '));

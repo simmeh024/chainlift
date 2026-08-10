@@ -1,6 +1,6 @@
 // Camera: pan and zoom over the isometric scene.
 
-import { screenToGrid } from './iso.js';
+import { screenToGrid, gridToScreen } from './iso.js';
 
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 2.5;
@@ -14,9 +14,15 @@ export class Camera {
   }
 
   // Centre the view on a grid cell.
+  //
+  // Goes through gridToScreen rather than repeating the projection maths.
+  // This used to inline half-tile constants of 32 and 16, which silently
+  // became wrong the moment the tile size changed — it was still centring on
+  // where the cell would have been under the old 64x32 tiles.
   centreOn(gx, gy) {
-    this.x = (gx - gy) * 32;
-    this.y = (gx + gy) * 16;
+    const p = gridToScreen(gx, gy);
+    this.x = p.x;
+    this.y = p.y;
   }
 
   pan(dxScreen, dyScreen) {

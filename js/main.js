@@ -5,11 +5,17 @@ import { Renderer } from './render/renderer.js';
 import { Park } from './sim/park.js';
 import { BUILD_ITEMS, itemById } from './data/catalog.js';
 import { TILE } from './core/grid.js';
+import { TILE_H } from './core/iso.js';
 import { Hud, Toast } from './ui/hud.js';
+import { loadSprites } from './render/sprites.js';
 import { savePark, loadPark, saveLocal, loadLocal } from './net/save.js';
 
 const SIM_STEP = 1 / 30; // fixed simulation timestep
 const MAX_FRAME = 0.25;  // never simulate more than this much per frame
+
+// The tile art is 132x66, so drawing it 1:1 fills the viewport with about a
+// dozen tiles. Opening zoomed out shows enough of the park to plan in.
+const DEFAULT_ZOOM = 0.6;
 
 const canvas = document.getElementById('stage');
 const camera = new Camera(canvas);
@@ -23,15 +29,24 @@ let speed = 1;
 let panning = false;
 let panLast = null;
 let suppressClick = false;
+// Cells already altered by the current drag, so one stroke changes each tile
+// once however slowly the cursor crosses it.
+const strokeTouched = new Set();
 
 frameParkEntrance();
 
 // Put the gate near the bottom of the view with the buildable land above it.
 // Centring on the gate itself is the obvious thing and it is wrong: the gate
 // sits on the map's south edge, so half the viewport ends up as off-map void.
+//
+// Both numbers are expressed in tiles rather than pixels. They were pixel
+// constants tuned against 32px tiles, and adopting Kenney's 132x66 art
+// silently broke the framing — the offset stayed put while everything it was
+// measuring against doubled.
 function frameParkEntrance() {
+  camera.zoom = DEFAULT_ZOOM;
   camera.centreOn(park.entrance.gx, park.entrance.gy);
-  camera.y -= 250;
+  camera.y -= TILE_H * 8;
 }
 
 // --- toolbar ------------------------------------------------------------
@@ -95,9 +110,14 @@ canvas.addEventListener('mousemove', (event) => {
   if (tool && tool !== 'delete') {
     const spec = itemById(tool);
     const { w, h } = spec.footprint;
-    const valid = spec.kind === 'path'
-      ? park.grid.typeAt(cell.gx, cell.gy) === TILE.GRASS && park.canAfford(spec)
-      : park.grid.canPlace(cell.gx, cell.gy, w, h) && park.canAfford(spec);
+    let valid;
+    if (spec.kind === 'path') {
+      valid = park.grid.typeAt(cell.gx, cell.gy) === TILE.GRASS && park.canAfford(spec);
+    } else if (spec.kind === 'terrain') {
+      valid = park.grid.canReshape(cell.gx, cell.gy) && park.canAfford(spec);
+    } else {
+      valid = park.grid.canPlace(cell.gx, cell.gy, w, h) && park.canAfford(spec);
+    }
     renderer.ghost = { spec, gx: cell.gx, gy: cell.gy, valid };
     renderer.hover = null;
   } else {
@@ -119,6 +139,7 @@ canvas.addEventListener('mousedown', (event) => {
 window.addEventListener('mouseup', () => {
   panning = false;
   panLast = null;
+  strokeTouched.clear();
   canvas.classList.remove('is-panning');
 });
 
@@ -145,9 +166,18 @@ canvas.addEventListener('click', (event) => {
 // Dragging out a run of path is the single most-used action in this genre;
 // clicking every tile individually would be miserable.
 canvas.addEventListener('mousemove', (event) => {
-  if (tool !== 'path' || !(event.buttons & 1) || panning) return;
+  // Paths and terrain are both painted in strokes rather than placed one cell
+  // at a time; clicking every tile of a footpath or a hillside is miserable.
+  const draggable = tool === 'path' || tool === 'raise' || tool === 'lower';
+  if (!draggable || !(event.buttons & 1) || panning) return;
   const cell = cellFromEvent(event);
-  if (park.grid.inBounds(cell.gx, cell.gy)) park.place('path', cell.gx, cell.gy);
+  if (!park.grid.inBounds(cell.gx, cell.gy)) return;
+  // One change per cell per stroke, or a slow drag would raise the same tile
+  // to maximum height under a stationary cursor.
+  const key = `${cell.gx},${cell.gy}`;
+  if (strokeTouched.has(key)) return;
+  strokeTouched.add(key);
+  park.place(tool, cell.gx, cell.gy);
 });
 
 canvas.addEventListener('wheel', (event) => {
@@ -252,11 +282,20 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-function init() {
+async function init() {
   buildToolbar();
   setSpeed(1);
   renderer.resize();
   window.addEventListener('resize', () => renderer.resize());
+
+  // Wait for the tile art before the first frame, or the opening view is a
+  // park drawn entirely in fallback colours that then pops. loadSprites never
+  // rejects — a sprite that fails to load falls back to procedural drawing.
+  const loaded = await loadSprites();
+  const missing = loaded.filter((r) => !r.ok).map((r) => r.key);
+  if (missing.length) {
+    toast.show(`Some tile art did not load: ${missing.join(', ')}`, 'warn');
+  }
 
   const local = loadLocal();
   if (local) {

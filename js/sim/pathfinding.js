@@ -37,7 +37,9 @@ export function findPath(grid, start, isGoal, maxNodes = 6000) {
       for (const dir of DIRS) {
         const nx = cell.gx + dir.dx;
         const ny = cell.gy + dir.dy;
-        if (!grid.isWalkable(nx, ny)) continue;
+        // canStep, not isWalkable: a path at the top of a cliff is walkable
+        // but not reachable from down here.
+        if (!grid.canStep(cell.gx, cell.gy, nx, ny)) continue;
         const idx = grid.index(nx, ny);
         if (cameFrom.has(idx)) continue;
         cameFrom.set(idx, grid.index(cell.gx, cell.gy));
@@ -65,7 +67,7 @@ function reconstruct(grid, cameFrom, goal) {
 export function randomStep(grid, from) {
   const options = DIRS
     .map((d) => ({ gx: from.gx + d.dx, gy: from.gy + d.dy }))
-    .filter((c) => grid.isWalkable(c.gx, c.gy));
+    .filter((c) => grid.canStep(from.gx, from.gy, c.gx, c.gy));
   if (options.length === 0) return null;
   return options[Math.floor(Math.random() * options.length)];
 }

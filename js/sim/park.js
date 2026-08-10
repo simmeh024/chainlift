@@ -79,10 +79,31 @@ export class Park {
     return this.money >= spec.cost;
   }
 
+  // Raise or lower one tile. Terrain is charged like anything else, so
+  // landscaping competes with rides for the same budget.
+  reshape(gx, gy, delta, cost) {
+    if (this.money < cost) return { ok: false, reason: 'Not enough money' };
+    if (!this.grid.canReshape(gx, gy)) {
+      return { ok: false, reason: 'Clear what is built here first' };
+    }
+    if (!this.grid.reshape(gx, gy, delta)) {
+      return { ok: false, reason: delta > 0 ? 'Already at maximum height' : 'Already at ground level' };
+    }
+    this.money -= cost;
+    // Elevation changes what guests can reach, so the access map has to be
+    // rebuilt even though no building moved.
+    this.rebuildAccess();
+    return { ok: true };
+  }
+
   place(itemId, gx, gy) {
     const spec = itemById(itemId);
     if (!spec) return { ok: false, reason: 'Unknown item' };
     if (!this.canAfford(spec)) return { ok: false, reason: 'Not enough money' };
+
+    if (spec.kind === 'terrain') {
+      return this.reshape(gx, gy, spec.delta, spec.cost);
+    }
 
     if (spec.kind === 'path') {
       if (this.grid.typeAt(gx, gy) !== TILE.GRASS) {
@@ -165,7 +186,9 @@ export class Park {
     for (const building of this.buildings) {
       if (!building.active) continue;
       for (const cell of this.grid.neighbours(building.gx, building.gy, building.w, building.h)) {
-        if (!this.grid.isWalkable(cell.gx, cell.gy)) continue;
+        // canStep, not isWalkable: a queue tile a cliff above the building's
+        // pad is not somewhere a guest can actually join from.
+        if (!this.grid.canStep(building.gx, building.gy, cell.gx, cell.gy)) continue;
         const idx = this.grid.index(cell.gx, cell.gy);
         if (!this.accessTiles.has(idx)) this.accessTiles.set(idx, []);
         this.accessTiles.get(idx).push(building.id);

@@ -17,7 +17,27 @@ export const CATALOG = {
     kind: 'path',
     cost: 12,
     footprint: { w: 1, h: 1 },
-    colour: '#8d8378',
+    colour: '#d8d3bf',
+  },
+
+  raise: {
+    id: 'raise',
+    name: 'Raise Land',
+    kind: 'terrain',
+    delta: 1,
+    cost: 40,
+    footprint: { w: 1, h: 1 },
+    colour: '#a57b52',
+  },
+
+  lower: {
+    id: 'lower',
+    name: 'Lower Land',
+    kind: 'terrain',
+    delta: -1,
+    cost: 40,
+    footprint: { w: 1, h: 1 },
+    colour: '#805f3e',
   },
 
   carousel: {
@@ -115,6 +135,8 @@ export const CATALOG = {
 
 export const BUILD_ITEMS = [
   CATALOG.path,
+  CATALOG.raise,
+  CATALOG.lower,
   CATALOG.carousel,
   CATALOG.teacups,
   CATALOG.droptower,
