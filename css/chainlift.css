@@ -280,6 +280,16 @@ kbd {
 .toast[data-tone="good"] { border-color: var(--good); }
 .toast[data-tone="warn"] { border-color: var(--warn); }
 
+/* Every control here is a button, so keyboard focus needs to be visible.
+   Offset rather than inset so the ring reads against the panel behind it. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+#stage:focus-visible { outline-offset: -3px; }
+
 @media (prefers-reduced-motion: reduce) {
   .toast, .hud-bar-fill { transition: none; }
 }

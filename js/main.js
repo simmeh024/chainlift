@@ -2,7 +2,7 @@
 
 import { Camera } from './core/camera.js';
 import { Renderer } from './render/renderer.js';
-import { Park, GRID_SIZE } from './sim/park.js';
+import { Park } from './sim/park.js';
 import { BUILD_ITEMS, itemById } from './data/catalog.js';
 import { TILE } from './core/grid.js';
 import { Hud, Toast } from './ui/hud.js';
@@ -24,7 +24,15 @@ let panning = false;
 let panLast = null;
 let suppressClick = false;
 
-camera.centreOn(GRID_SIZE / 2, GRID_SIZE - 8);
+frameParkEntrance();
+
+// Put the gate near the bottom of the view with the buildable land above it.
+// Centring on the gate itself is the obvious thing and it is wrong: the gate
+// sits on the map's south edge, so half the viewport ends up as off-map void.
+function frameParkEntrance() {
+  camera.centreOn(park.entrance.gx, park.entrance.gy);
+  camera.y -= 250;
+}
 
 // --- toolbar ------------------------------------------------------------
 
@@ -215,7 +223,7 @@ document.getElementById('btn-load').addEventListener('click', async () => {
 
 document.getElementById('btn-new').addEventListener('click', () => {
   park = new Park();
-  camera.centreOn(GRID_SIZE / 2, GRID_SIZE - 8);
+  frameParkEntrance();
   toast.show('New park', 'info');
 });
 
