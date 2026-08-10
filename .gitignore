@@ -1,0 +1,9 @@
+# Real credentials never belong in this repo — it is public.
+api/config.php
+
+# Editor / OS noise
+.vs/
+.idea/
+.DS_Store
+Thumbs.db
+*~

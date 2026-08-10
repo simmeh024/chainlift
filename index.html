@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chainlift</title>
+<meta name="description" content="Chainlift — build and run your own theme park in the browser.">
+<link rel="stylesheet" href="css/chainlift.css?v=1">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">Chainlift</span>
+  </div>
+
+  <div class="hud">
+    <div class="hud-stat">
+      <span class="hud-label">Cash</span>
+      <span class="hud-value" id="hud-money">$0</span>
+    </div>
+    <div class="hud-stat">
+      <span class="hud-label">Guests</span>
+      <span class="hud-value" id="hud-guests">0</span>
+    </div>
+    <div class="hud-stat">
+      <span class="hud-label">Happy</span>
+      <span class="hud-value" id="hud-happiness">—</span>
+    </div>
+    <div class="hud-stat hud-stat--rating">
+      <span class="hud-label">Rating</span>
+      <span class="hud-value" id="hud-rating">0</span>
+      <span class="hud-bar"><span class="hud-bar-fill" id="hud-rating-bar"></span></span>
+    </div>
+    <div class="hud-stat">
+      <span class="hud-label" id="hud-day">Day 1</span>
+      <span class="hud-value" id="hud-clock">09:00</span>
+    </div>
+  </div>
+
+  <div class="topbar-actions">
+    <div class="speed-group" role="group" aria-label="Simulation speed">
+      <button type="button" data-speed="0" title="Pause (space)">II</button>
+      <button type="button" data-speed="1" title="Normal speed">1x</button>
+      <button type="button" data-speed="2" title="Double speed">2x</button>
+      <button type="button" data-speed="4" title="Quadruple speed">4x</button>
+    </div>
+    <button type="button" class="btn" id="btn-save">Save</button>
+    <button type="button" class="btn" id="btn-load">Load</button>
+    <button type="button" class="btn btn-quiet" id="btn-new">New</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="sidebar">
+    <h2 class="sidebar-title">Build</h2>
+    <div id="toolbar" class="toolbar"></div>
+    <p class="sidebar-hint">
+      Drag with no tool selected to pan. Scroll to zoom.
+      Number keys pick a tool, <kbd>X</kbd> demolishes, <kbd>Esc</kbd> clears.
+    </p>
+    <p class="sidebar-hint">
+      Guests arrive at the gate and can only reach what a footpath connects.
+      Watch for queues building up, and for the colour draining out of them.
+    </p>
+  </aside>
+
+  <div class="stage-wrap">
+    <canvas id="stage"></canvas>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </div>
+</main>
+
+<script type="module" src="js/main.js?v=1"></script>
+</body>
+</html>

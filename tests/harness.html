@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chainlift harness</title>
+<style>
+  body { background:#111; color:#ddd; font:13px/1.6 ui-monospace, Consolas, monospace; padding:16px; }
+  .pass { color:#63c98a; }
+  .fail { color:#e0685f; font-weight:700; }
+  h2 { color:#6cc2d8; font-size:13px; margin:16px 0 4px; }
+  #summary { font-size:15px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+<div id="summary">running…</div>
+<div id="out"></div>
+
+<script type="module">
+// Imports the REAL modules. Nothing is reimplemented here, so a passing
+// assertion is evidence about the shipped code and not about a copy of it.
+import { Grid, TILE } from '../js/core/grid.js';
+import { Park, GRID_SIZE } from '../js/sim/park.js';
+import { findPath } from '../js/sim/pathfinding.js';
+import { STATE } from '../js/sim/guests.js';
+import { CATALOG, NEED } from '../js/data/catalog.js';
+import { gridToScreen, screenToGrid, depthOf } from '../js/core/iso.js';
+
+const out = document.getElementById('out');
+let passed = 0, failed = 0;
+
+function group(name) {
+  const h = document.createElement('h2');
+  h.textContent = name;
+  out.appendChild(h);
+}
+
+function check(label, condition, detail = '') {
+  const line = document.createElement('div');
+  if (condition) { passed++; line.className = 'pass'; line.textContent = 'PASS  ' + label; }
+  else { failed++; line.className = 'fail'; line.textContent = 'FAIL  ' + label + (detail ? '  — ' + detail : ''); }
+  out.appendChild(line);
+}
+
+// --- iso maths ---------------------------------------------------------
+group('Isometric projection');
+{
+  const round = screenToGrid(gridToScreen(7, 11).x + 1, gridToScreen(7, 11).y + 8);
+  check('grid -> screen -> grid round-trips', round.gx === 7 && round.gy === 11,
+    `got ${round.gx},${round.gy}`);
+  check('depth increases away from camera', depthOf(3, 3) > depthOf(1, 2));
+  check('origin maps to screen origin', gridToScreen(0, 0).x === 0 && gridToScreen(0, 0).y === 0);
+}
+
+// --- grid --------------------------------------------------------------
+group('Grid');
+{
+  const g = new Grid(10, 10);
+  check('starts as grass', g.typeAt(5, 5) === TILE.GRASS);
+  check('rejects out of bounds', g.typeAt(-1, 0) === null && g.typeAt(10, 0) === null);
+  check('2x2 fits on empty grass', g.canPlace(2, 2, 2, 2) === true);
+
+  g.set(3, 3, TILE.PATH);
+  check('path is walkable', g.isWalkable(3, 3) === true);
+  check('grass is not walkable', g.isWalkable(4, 4) === false);
+  check('footprint overlapping a path is refused', g.canPlace(2, 2, 2, 2) === false);
+  check('footprint off the edge is refused', g.canPlace(9, 9, 2, 2) === false);
+
+  g.fill(6, 6, 2, 2, TILE.BUILDING, 42);
+  check('fill writes owner to every cell',
+    g.ownerAt(6, 6) === 42 && g.ownerAt(7, 7) === 42);
+  check('neighbours of a 2x2 are 8 cells', g.neighbours(6, 6, 2, 2).length === 8,
+    String(g.neighbours(6, 6, 2, 2).length));
+  g.clear(6, 6, 2, 2);
+  check('clear restores grass and drops owner',
+    g.typeAt(6, 6) === TILE.GRASS && g.ownerAt(6, 6) === -1);
+}
+
+// --- pathfinding -------------------------------------------------------
+group('Pathfinding');
+{
+  const g = new Grid(12, 12);
+  for (let x = 1; x <= 8; x++) g.set(x, 5, TILE.PATH);
+  const path = findPath(g, { gx: 1, gy: 5 }, (gx, gy) => gx === 8 && gy === 5);
+  check('finds a straight corridor', path !== null && path.length === 8,
+    path ? `length ${path.length}` : 'null');
+  check('path starts at the start', path && path[0].gx === 1 && path[0].gy === 5);
+  check('path ends at the goal', path && path[path.length - 1].gx === 8);
+
+  g.set(5, 5, TILE.GRASS); // sever it
+  const broken = findPath(g, { gx: 1, gy: 5 }, (gx, gy) => gx === 8 && gy === 5);
+  check('returns null across a gap', broken === null);
+  check('refuses to start off-path',
+    findPath(g, { gx: 0, gy: 0 }, () => true) === null);
+}
+
+// --- park building -----------------------------------------------------
+group('Park building rules');
+{
+  const park = new Park();
+  const startMoney = park.money;
+  check('gate exists on the edge', park.grid.typeAt(park.entrance.gx, park.entrance.gy) === TILE.ENTRANCE);
+  check('gate has a path stub', park.grid.isWalkable(park.entrance.gx, park.entrance.gy - 1));
+
+  const mid = Math.floor(GRID_SIZE / 2);
+  const placed = park.place('carousel', mid + 1, GRID_SIZE - 4);
+  check('places a ride on grass', placed.ok === true, placed.reason);
+  check('charges the build cost', park.money === startMoney - CATALOG.carousel.cost,
+    `money ${park.money}`);
+  check('marks all four footprint cells',
+    park.grid.typeAt(mid + 1, GRID_SIZE - 4) === TILE.BUILDING &&
+    park.grid.typeAt(mid + 2, GRID_SIZE - 3) === TILE.BUILDING);
+
+  const overlap = park.place('teacups', mid + 1, GRID_SIZE - 4);
+  check('refuses to overlap an existing ride', overlap.ok === false);
+
+  const onPath = park.place('teacups', mid, GRID_SIZE - 4);
+  check('refuses to build over a footpath', onPath.ok === false);
+
+  const gate = park.removeAt(park.entrance.gx, park.entrance.gy);
+  check('the gate cannot be demolished', gate.ok === false);
+
+  const before = park.money;
+  const removed = park.removeAt(mid + 1, GRID_SIZE - 4);
+  check('demolish refunds half', removed.ok && park.money === before + Math.floor(CATALOG.carousel.cost / 2),
+    `refund ${removed.refund}`);
+  check('demolish frees the tiles', park.grid.typeAt(mid + 1, GRID_SIZE - 4) === TILE.GRASS);
+
+  const poor = new Park();
+  poor.money = 10;
+  check('refuses what cannot be afforded', poor.place('droptower', 5, 5).ok === false);
+}
+
+// --- access map --------------------------------------------------------
+group('Reachability');
+{
+  const park = new Park();
+  const mid = Math.floor(GRID_SIZE / 2);
+  park.place('burgers', mid + 1, GRID_SIZE - 3);
+  const accessCount = [...park.accessTiles.values()].flat().length;
+  check('a stall beside the path is reachable', accessCount > 0, `access entries ${accessCount}`);
+
+  const far = new Park();
+  far.place('burgers', 2, 2); // nowhere near a path
+  const farAccess = [...far.accessTiles.values()].flat().length;
+  check('a stall with no adjoining path is unreachable', farAccess === 0, `access entries ${farAccess}`);
+}
+
+// --- live simulation ---------------------------------------------------
+group('Simulation (integration)');
+{
+  const park = new Park();
+  const mid = Math.floor(GRID_SIZE / 2);
+
+  // A short spine of path off the gate, with a ride and both shops on it.
+  for (let i = 5; i <= 14; i++) park.grid.set(mid, GRID_SIZE - 1 - i, TILE.PATH);
+  park.place('carousel', mid + 1, GRID_SIZE - 9);
+  park.place('burgers', mid - 1, GRID_SIZE - 7);
+  park.place('drinks', mid - 1, GRID_SIZE - 11);
+  park.rebuildAccess();
+
+  const moneyBefore = park.money;
+  // 90 game minutes at the real fixed timestep. One game minute passes per
+  // simulated second, so this is 90 * 30 ticks and lands at 10:30 — inside
+  // opening hours. Running a whole day instead would close the park and empty
+  // it, which is correct behaviour but tests nothing about a park in use.
+  const TICKS_PER_GAME_MINUTE = 30;
+  for (let i = 0; i < TICKS_PER_GAME_MINUTE * 90; i++) park.tick(1 / 30);
+
+  check('guests were admitted', park.stats.admitted > 0, `admitted ${park.stats.admitted}`);
+  check('guests are in the park', park.guests.length > 0, `present ${park.guests.length}`);
+  check('the park took money', park.money > moneyBefore,
+    `${moneyBefore} -> ${Math.round(park.money)}`);
+  check('rides earned fares', park.buildings.some((b) => b.totalCustomers > 0),
+    park.buildings.map((b) => `${b.spec.name}:${b.totalCustomers}`).join(' '));
+
+  const onPaths = park.guests.every((g) => park.grid.isWalkable(g.gx, g.gy) || g.state === STATE.CONSUMING);
+  check('no guest is standing on grass', onPaths);
+
+  const sane = park.guests.every((g) =>
+    g.happiness >= 0 && g.happiness <= 1 &&
+    Object.values(g.needs).every((n) => n >= 0 && n <= 1));
+  check('needs and happiness stay in range', sane);
+
+  // Throughput regression. A ride serves a whole vehicle per cycle, so over
+  // 90 simulated seconds a 20-second carousel must beat the one-guest-per-
+  // cycle ceiling of ~4 by a wide margin. This is the exact bug the first
+  // balance trace exposed: rated capacity was being ignored entirely.
+  const carousel = park.buildings.find((b) => b.spec === CATALOG.carousel);
+  check('a ride boards whole vehicles, not one guest per cycle',
+    carousel.totalCustomers > 12, `served ${carousel.totalCustomers}`);
+  check('a vehicle never exceeds its rated capacity',
+    park.buildings.every((b) => b.loaded <= b.spec.capacity),
+    park.buildings.map((b) => `${b.spec.name}:${b.loaded}/${b.spec.capacity}`).join(' '));
+
+  check('rating is on a 0..1000 scale', park.rating >= 0 && park.rating <= 1000, String(park.rating));
+  check('the clock advanced past opening', park.minutes > 9 * 60, park.clock);
+  check('the park is still open', park.minutes < 21 * 60, park.clock);
+
+  // A park with nothing to do should make guests miserable, not content.
+  const barren = new Park();
+  for (let i = 0; i < TICKS_PER_GAME_MINUTE * 90; i++) barren.tick(1 / 30);
+  const barrenHappy = barren.guests.length ? barren.averageHappiness : 0;
+  const builtHappy = park.averageHappiness;
+  check('an empty park is less happy than a built one', barrenHappy < builtHappy,
+    `barren ${barrenHappy.toFixed(2)} vs built ${builtHappy.toFixed(2)}`);
+}
+
+// --- persistence -------------------------------------------------------
+group('Save / load');
+{
+  const park = new Park();
+  const mid = Math.floor(GRID_SIZE / 2);
+  park.place('droptower', mid + 2, GRID_SIZE - 6);
+  park.place('drinks', mid - 2, GRID_SIZE - 4);
+  park.money = 4321;
+  park.day = 7;
+
+  const restored = Park.deserialize(JSON.parse(JSON.stringify(park.serialize())));
+  check('money survives a round trip', restored.money === 4321);
+  check('day survives a round trip', restored.day === 7);
+  check('buildings survive a round trip', restored.buildings.length === park.buildings.length);
+  check('building specs are rehydrated', restored.buildings[0].spec === CATALOG.droptower);
+  check('the grid survives a round trip',
+    restored.grid.typeAt(mid + 2, GRID_SIZE - 6) === TILE.BUILDING);
+  check('access map is rebuilt on load', restored.accessTiles instanceof Map);
+  check('a restored park still ticks', (() => {
+    try { for (let i = 0; i < 600; i++) restored.tick(1 / 30); return true; }
+    catch (e) { return false; }
+  })());
+}
+
+const summary = document.getElementById('summary');
+summary.textContent = `${passed} passed, ${failed} failed`;
+summary.className = failed === 0 ? 'pass' : 'fail';
+document.title = failed === 0 ? `OK ${passed}/${passed}` : `FAIL ${failed}`;
+</script>
+</body>
+</html>

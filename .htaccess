@@ -1,0 +1,26 @@
+# Chainlift
+
+# The migration files are applied by migrate.php reading them off disk; there
+# is no reason for anyone to fetch them over HTTP.
+<FilesMatch "\.sql$">
+  Require all denied
+</FilesMatch>
+
+# Never serve a config file, even if one is placed here by mistake.
+<FilesMatch "^config\.php$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# JS and CSS are versioned with ?v= query strings, so they can be cached hard.
+# HTML must not be, or a deploy would not reach anyone.
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 1 year"
+  ExpiresByType application/javascript "access plus 1 year"
+  ExpiresByType text/html "access plus 0 seconds"
+</IfModule>

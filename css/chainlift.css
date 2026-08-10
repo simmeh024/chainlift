@@ -1,0 +1,291 @@
+/* Chainlift — dark operations-console look. One stylesheet, no build step. */
+
+:root {
+  --bg: #131a24;
+  --panel: #1b2430;
+  --panel-2: #222d3b;
+  --line: #2f3d4e;
+  --text: #e6edf5;
+  --text-dim: #9fb0c4;
+  --accent: #6cc2d8;
+  --gold: #d8b45a;
+  --good: #63c98a;
+  --warn: #e8a25c;
+  --bad: #e0685f;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* --- top bar ---------------------------------------------------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 16px;
+  height: 56px;
+  flex: 0 0 auto;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* A chain-lift hill: the shape the name refers to. */
+.brand-mark {
+  width: 20px;
+  height: 20px;
+  background:
+    linear-gradient(45deg, transparent 46%, var(--gold) 46% 54%, transparent 54%),
+    linear-gradient(-45deg, transparent 46%, var(--accent) 46% 54%, transparent 54%);
+  border-radius: 3px;
+}
+
+.brand-name { font-size: 15px; }
+
+.hud {
+  display: flex;
+  gap: 22px;
+  margin-left: 8px;
+}
+
+.hud-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 62px;
+}
+
+.hud-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-dim);
+}
+
+.hud-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.hud-value.is-negative { color: var(--bad); }
+
+.hud-stat--rating { min-width: 96px; }
+
+.hud-bar {
+  display: block;
+  height: 3px;
+  margin-top: 3px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.hud-bar-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.hud-bar-fill.is-poor { background: var(--bad); }
+.hud-bar-fill.is-good { background: var(--good); }
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.speed-group {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.speed-group button {
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line);
+  color: var(--text-dim);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.speed-group button:last-child { border-right: 0; }
+.speed-group button:hover { background: var(--panel-2); color: var(--text); }
+.speed-group button.is-active { background: var(--accent); color: #10202a; font-weight: 600; }
+
+.btn {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 13px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn:hover { border-color: var(--accent); }
+.btn-quiet { color: var(--text-dim); }
+
+/* --- layout ----------------------------------------------------------- */
+
+.layout {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.sidebar {
+  flex: 0 0 232px;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.sidebar-title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tool {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  background: var(--panel-2);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool:hover { border-color: var(--line); }
+.tool.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
+}
+
+.tool-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--swatch);
+}
+
+.tool-cost {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.tool.is-active .tool-cost { color: var(--text); }
+
+.sidebar-hint {
+  margin: 16px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+kbd {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font: inherit;
+  font-size: 11px;
+}
+
+/* --- stage ------------------------------------------------------------ */
+
+.stage-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#stage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+#stage.is-panning { cursor: grabbing; }
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translate(-50%, 8px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 16px;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  max-width: 70%;
+}
+
+.toast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.toast[data-tone="good"] { border-color: var(--good); }
+.toast[data-tone="warn"] { border-color: var(--warn); }
+
+@media (prefers-reduced-motion: reduce) {
+  .toast, .hud-bar-fill { transition: none; }
+}
+
+@media (max-width: 860px) {
+  .hud { gap: 14px; }
+  .hud-stat { min-width: 52px; }
+  .sidebar { flex-basis: 180px; }
+}
